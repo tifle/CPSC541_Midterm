@@ -63,68 +63,143 @@ X <- setdiff(names(ames_train), Y)
 
 ## Regularized Regression Base Learner
 ```{r 15.3, echo = FALSE, warning=FALSE}
-# Train & cross-validate a GLM model
-best_glm <- h2o.glm(
-  x = X, y = Y, training_frame = train_h2o, alpha = 0.1,
-  remove_collinear_columns = TRUE, nfolds = 2, fold_assignment = "Modulo",
-  keep_cross_validation_predictions = TRUE, seed = 123
+# Train & cross-validate a GLM model w/ Random Search
+glm_params <- list(alpha = seq(0, 1, 0.1))
+
+grid_id_glm <- paste0("glm_grid", as.integer(Sys.time()))
+glm_search <- h2o.grid(
+  algorithm = "glm",
+  grid_id = grid_id_glm,
+  x = X, y = Y,
+  training_frame = train_h2o,
+  hyper_params = glm_params,
+  search_criteria = list(strategy = "RandomDiscrete", max_models = 5, seed = 123),
+  remove_collinear_columns = TRUE,
+  nfolds = 2,
+  fold_assignment = "Modulo",
+  keep_cross_validation_predictions = TRUE,
+  seed = 123
 )
+
+best_glm <- h2o.getGrid("glm_grid", sort_by = "rmse", decreasing = FALSE)@model_ids[[1]]
 ```
 ## Random Forest Base Learner
 ```{r}
-# Train & cross-validate a RF model
-best_rf <- h2o.randomForest(
-  x = X, y = Y, training_frame = train_h2o, ntrees = 100, mtries = -1,
-  max_depth = 15, min_rows = 1, sample_rate = 0.8, nfolds = 2,
-  fold_assignment = "Modulo", keep_cross_validation_predictions = TRUE,
-  seed = 123, stopping_rounds = 50, stopping_metric = "RMSE",
-  stopping_tolerance = 0
+# Train & cross-validate a RF model w/ Random Search
+rf_params <- list(
+  ntrees = c(100, 200, 300),
+  max_depth = c(10, 15, 20),
+  sample_rate = c(0.7, 0.8, 0.9)
 )
+grid_id_rf <- paste0("rf_grid", as.integer(Sys.time()))
+rf_search <- h2o.grid(
+  algorithm = "randomForest",
+  grid_id = grid_id_rf,
+  x = X, y = Y,
+  training_frame = train_h2o,
+  hyper_params = rf_params,
+  search_criteria = list(strategy = "RandomDiscrete", max_models = 5, seed = 123),
+  nfolds = 2,
+  fold_assignment = "Modulo",
+  keep_cross_validation_predictions = TRUE,
+  stopping_rounds = 10,
+  stopping_metric = "RMSE",
+  stopping_tolerance = 0,
+  seed = 123
+)
+
+best_rf <- h2o.getGrid("rf_grid", sort_by = "rmse", decreasing = FALSE)@model_ids[[1]]
+
 ```
 ## Gradient Boosting Base Learner
 ```{r}
-# Train & cross-validate a GBM model
-best_gbm <- h2o.gbm(
-  x = X, y = Y, training_frame = train_h2o, ntrees = 500, learn_rate = 0.01,
-  max_depth = 7, min_rows = 5, sample_rate = 0.8, nfolds = 2,
-  fold_assignment = "Modulo", keep_cross_validation_predictions = TRUE,
-  seed = 123, stopping_rounds = 50, stopping_metric = "RMSE",
-  stopping_tolerance = 0
+# Train & cross-validate a GBM model w/ Random Search
+gbm_params <- list(
+  learn_rate = c(0.01, 0.05),
+  max_depth = c(5, 7, 9),
+  sample_rate = c(0.7, 0.8, 0.9)
 )
+grid_id_gbm <- paste0("gbm_grid_", as.integer(Sys.time()))
+
+gbm_search <- h2o.grid(
+  algorithm = "gbm",
+  grid_id = grid_id_gbm,
+  x = X, y = Y,
+  training_frame = train_h2o,
+  hyper_params = gbm_params,
+  search_criteria = list(strategy = "RandomDiscrete", max_models = 5, seed = 123),
+  nfolds = 2,
+  fold_assignment = "Modulo",
+  keep_cross_validation_predictions = TRUE,
+  stopping_rounds = 10,
+  stopping_metric = "RMSE",
+  stopping_tolerance = 0,
+  seed = 123
+)
+
+best_gbm <- h2o.getGrid("gbm_grid", sort_by = "rmse", decreasing = FALSE)@model_ids[[1]]
+
 ```
 ## XGBoost Base Learner
 ```{r}
-# Train & cross-validate an XGBoost model
-best_xgb <- h2o.xgboost(
-  x = X, y = Y, training_frame = train_h2o, ntrees = 5000, learn_rate = 0.05,
-  max_depth = 3, min_rows = 3, sample_rate = 0.8, categorical_encoding = "LabelEncoder",
-  nfolds = 2, fold_assignment = "Modulo", 
-  keep_cross_validation_predictions = TRUE, seed = 123, stopping_rounds = 50,
-  stopping_metric = "RMSE", stopping_tolerance = 0
+# Train & cross-validate an XGBoost model w/ Random Search
+xgb_params <- list(
+  learn_rate = c(0.01, 0.05, 0.1),
+  max_depth = c(3, 5, 7),
+  sample_rate = c(0.7, 0.8, 0.9)
 )
+grid_id_xgb <- paste0("xgb_grid", as.integer(Sys.time()))
+xgb_search <- h2o.grid(
+  algorithm = "xgboost",
+  grid_id = grid_id_xgb,
+  x = X, y = Y,
+  training_frame = train_h2o,
+  hyper_params = xgb_params,
+  search_criteria = list(strategy = "RandomDiscrete", max_models = 5, seed = 123),
+  categorical_encoding = "LabelEncoder",
+  nfolds = 2,
+  fold_assignment = "Modulo",
+  keep_cross_validation_predictions = TRUE,
+  stopping_rounds = 10,
+  stopping_metric = "RMSE",
+  stopping_tolerance = 0,
+  seed = 123
+)
+
+best_xgb <- h2o.getGrid("xgb_grid", sort_by = "rmse", decreasing = FALSE)@model_ids[[1]]
+
 ```
 ## Neural Network Stack Model (Super Learner)
 ```{r echo = FALSE, warning=FALSE}
+
+grid_id_nn <- paste0("nn_ensemble_randomsearch", as.integer(Sys.time()))
 # Train a stacked tree ensemble
-
-metalearner_algorithm = "deeplearning"
-
 ensemble_nn <- h2o.stackedEnsemble(
-  x = X, y = Y, training_frame = train_h2o, model_id = "my_nn_ensemble",
+  x = X, y = Y,
+  training_frame = train_h2o,
+  model_id = grid_id_nn,
   base_models = list(best_glm, best_rf, best_gbm, best_xgb),
   metalearner_algorithm = "deeplearning"
 )
+
 ```
 
 ## Results
 ```{r}
-# Get results from base learners
+# Load actual H2O model objects from their IDs
+model_ids <- list("glm_grid_model_3", "rf_grid_model_1", "gbm_grid_model_12", "xgb_grid_model_5")
+models <- purrr::map(model_ids, h2o.getModel)
+
+# Now define get_rmse function and apply it
 get_rmse <- function(model) {
-  results <- h2o.performance(model, newdata = test_h2o)
-  results@metrics$RMSE
+  perf <- h2o.performance(model, newdata = test_h2o)
+  h2o.rmse(perf)
 }
-list(best_glm, best_rf, best_gbm, best_xgb) %>%
-  purrr::map_dbl(get_rmse)
+
+# Get RMSEs
+rmse_values <- purrr::map_dbl(models, get_rmse)
+
+rmse_values
 ```
 
 ```{r}
@@ -133,12 +208,36 @@ h2o.performance(ensemble_nn, newdata = test_h2o)@metrics$RMSE
 ```
 
 ```{r}
-data.frame(
-  GLM_pred = as.vector(h2o.getFrame(best_glm@model$cross_validation_holdout_predictions_frame_id$name)),
-  RF_pred = as.vector(h2o.getFrame(best_rf@model$cross_validation_holdout_predictions_frame_id$name)),
-  GBM_pred = as.vector(h2o.getFrame(best_gbm@model$cross_validation_holdout_predictions_frame_id$name)),
-  XGB_pred = as.vector(h2o.getFrame(best_xgb@model$cross_validation_holdout_predictions_frame_id$name))
-) %>% cor()
+get_cv_preds <- function(model) {
+  frame_id <- model@model$cross_validation_holdout_predictions_frame_id$name
+  if (!is.null(frame_id)) {
+    return(as.vector(h2o.getFrame(as.character(frame_id))))
+  } else {
+    warning(paste("No CV predictions found for model:", model@model_id))
+    return(rep(NA, model@parameters$training_frame@num_rows))
+  }
+}
+
+# Load models by ID
+best_glm <- h2o.getModel("glm_grid_model_3")
+best_rf  <- h2o.getModel("rf_grid_model_1")
+best_gbm <- h2o.getModel("gbm_grid_model_12")
+best_xgb <- h2o.getModel("xgb_grid_model_5")
+best_nn  <- h2o.getModel("nn_ensemble_randomsearch")  # replace if needed
+
+# Collect predictions
+pred_df <- data.frame(
+  GLM_pred = get_cv_preds(best_glm),
+  RF_pred  = get_cv_preds(best_rf),
+  GBM_pred = get_cv_preds(best_gbm),
+  XGB_pred = get_cv_preds(best_xgb)
+)
+
+# Drop rows with NA (in case any model didn't return predictions)
+pred_df <- na.omit(pred_df)
+
+# Correlation matrix
+cor(pred_df)
 ```
 
 
